@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener & QR Generator</title>
+    <script src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"></script>
+    <style>
+        :root { --primary: #00a8e5; --primary-hover: #008fc2; --bg: #f6f8fa; --border: #d0d7de; --text: #24292f; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: var(--text); }
+        .container { max-width: 1200px; margin: 0 auto; display: flex; gap: 20px; flex-wrap: wrap; }
+        
+        .panel { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .panel-left { flex: 1; min-width: 350px; }
+        .panel-right { width: 400px; display: flex; flex-direction: column; align-items: center; position: sticky; top: 20px; height: fit-content; }
+
+        h2, h3 { margin-top: 0; color: var(--text); }
+        h3 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
+        
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px; }
+        input[type="text"], input[type="url"], input[type="password"], input[type="number"], select { 
+            width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 6px; 
+        }
+        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 168, 229, 0.2); }
+        
+        .row { display: flex; gap: 15px; }
+        .col { flex: 1; }
+        
+        .color-picker { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        input[type="color"] { width: 40px; height: 40px; padding: 0; border: none; border-radius: 4px; cursor: pointer; }
+        
+        .checkbox-group { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; font-weight: normal; cursor: pointer; }
+        
+        .btn-primary { width: 100%; background: var(--primary); color: #fff; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; margin-bottom: 10px; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-primary:disabled { background: #8cdbfa; cursor: not-allowed; }
+        
+        .btn-download { background: #24292f; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px;}
+        .btn-download:hover { background: #424a53; }
+
+        #qrPreview { background: #fff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; justify-content: center; width: 100%; }
+        #qrPreview canvas, #qrPreview svg { max-width: 100%; height: auto; }
+        
+        .alert { padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; display: none; }
+        .alert-warning { background: #fff8c5; color: #9a6700; border: 1px solid #e6cc7a; display: block; }
+        .alert-success { background: #dafbe1; color: #1a7f37; border: 1px solid #aceebb; }
+        
+        .hint { font-size: 12px; color: #57606a; display: block; margin-top: -10px; margin-bottom: 15px; }
+
+        .logo-preview { max-width: 80px; max-height: 80px; display: none; margin-top: 10px; border-radius: 4px; border: 1px dashed var(--border); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="panel panel-left">
+            <h2>Rút gọn URL & Tạo mã QR </h2>
+            
+            <h3>1. Cấu hình URL </h3>
+            <label>URL đích</label>
+            <input type="url" id="longUrl" placeholder="https://..." oninput="updateQRPreview()">
+            
+            <div class="row">
+                <div class="col">
+                    <label>Mã rút gọn (tùy chọn)</label>
+                    <input type="text" id="shortSlug" placeholder="Ví dụ: event-2026">
+                </div>
+                <div class="col">
+                    <label>GitHub Token</label>
+                    <input type="password" id="ghToken" placeholder="Chỉ cần khi tạo link rút gọn">
+                </div>
+            </div>
+            <button id="btnCreateLink" class="btn-primary" onclick="createShortLink()">Rút gọn URL & Cập nhật QR</button>
+            <div id="statusLink" class="alert alert-success"></div>
+
+            <h3 style="margin-top: 30px;">2. Thiết kế mã QR</h3>
+            
+            <div class="row">
+                <div class="col">
+                    <label>Kiểu màu nền</label>
+                    <select id="bgFillType" onchange="toggleBgColors(); updateQRPreview()">
+                        <option value="solid">Màu đơn</option>
+                        <option value="linear">Gradient (Tuyến tính)</option>
+                        <option value="radial">Gradient (Tỏa tròn)</option>
+                    </select>
+                    
+                    <div id="bgSolidGroup" class="color-picker" style="margin-top: 10px;">
+                        <input type="color" id="bgColor" value="#ffffff" onchange="checkContrast(); updateQRPreview()">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="bgTransparent" onchange="toggleBgColors(); checkContrast(); updateQRPreview()"> Nền trong suốt
+                        </label>
+                    </div>
+
+                    <div id="bgGradientGroup" class="color-picker" style="display: none; flex-wrap: wrap; margin-top: 10px;">
+                        <input type="color" id="bgColor1" value="#ffffff" onchange="checkContrast(); updateQRPreview()">
+                        <input type="color" id="bgColor2" value="#e6f7ff" onchange="checkContrast(); updateQRPreview()">
+                        <div style="width: 100%; font-size: 12px; margin-top: 5px;">
+                            Góc xoay: <span id="bgAngleVal">45</span>°
+                            <input type="range" id="bgAngle" min="0" max="360" value="45" style="width:100%" oninput="document.getElementById('bgAngleVal').innerText=this.value; updateQRPreview()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col">
+                    <label>Kiểu màu họa tiết</label>
+                    <select id="dotFillType" onchange="toggleDotColors(); updateQRPreview()">
+                        <option value="solid">Màu đơn</option>
+                        <option value="linear" selected>Gradient (Tuyến tính)</option>
+                        <option value="radial">Gradient (Tỏa tròn)</option>
+                    </select>
+                    
+                    <div id="dotSolidGroup" class="color-picker" style="display: none; margin-top: 10px;">
+                        <input type="color" id="dotColor" value="#00a8e5" onchange="checkContrast(); updateQRPreview()">
+                    </div>
+
+                    <div id="dotGradientGroup" class="color-picker" style="display: flex; flex-wrap: wrap; margin-top: 10px;">
+                        <input type="color" id="dotColor1" value="#00a8e5" onchange="checkContrast(); updateQRPreview()"> <input type="color" id="dotColor2" value="#0056b3" onchange="checkContrast(); updateQRPreview()"> <div style="width: 100%; font-size: 12px; margin-top: 5px;">
+                            Góc xoay: <span id="dotAngleVal">135</span>°
+                            <input type="range" id="dotAngle" min="0" max="360" value="135" style="width:100%" oninput="document.getElementById('dotAngleVal').innerText=this.value; updateQRPreview()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="contrastWarning" class="alert alert-warning" style="display:none;">
+                Cảnh báo: Màu nền và màu chấm chưa đủ độ tương phản. Máy quét có thể không đọc được mã QR này!
+            </div>
+
+            <div class="row">
+                <div class="col">
+                    <label>Kiểu chấm</label>
+                    <select id="dotType" onchange="updateQRPreview()">
+                        <option value="square">Vuông (Cổ điển)</option>
+                        <option value="dots">Chấm bi (Dots)</option>
+                        <option value="rounded">Bo góc (Rounded)</option>
+                        <option value="extra-rounded">Bo tròn nhiều</option>
+                        <option value="classy">Lịch lãm (Classy)</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label>Khung mắt ngoài</label>
+                    <select id="eyeFrame" onchange="updateQRPreview()">
+                        <option value="square">Vuông</option>
+                        <option value="dot">Tròn</option>
+                        <option value="extra-rounded">Bo góc mềm</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label>Mức độ sửa lỗi</label>
+                    <select id="errorCorrection" onchange="updateQRPreview()">
+                        <option value="H">Tốt nhất (Chịu lỗi 30% - Nhiều chấm, dày nhất)</option>
+                        <option value="Q">Cao (Chịu lỗi 25%)</option>
+                        <option value="M">Trung bình (Chịu lỗi 15%)</option>
+                        <option value="L">Nhỏ nhất (Chịu lỗi 7% - Ít chấm, thoáng nhất)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col">
+                    <label>Chèn Logo (Tâm QR)</label>
+                    <input type="file" id="logoUpload" accept="image/png, image/jpeg, image/svg+xml" onchange="handleLogoUpload(event)">
+                    <button type="button" onclick="clearLogo()" style="font-size:12px; cursor:pointer;">Xóa Logo</button>
+                    <img id="logoImg" class="logo-preview" src="">
+                </div>
+                <div class="col">
+                    <label>Kích thước Logo</label>
+                    <input type="range" id="logoSize" min="0.1" max="0.5" step="0.05" value="0.4" style="width:100%" oninput="updateQRPreview()">
+                    <label class="checkbox-group" style="margin-top:10px;">
+                        <input type="checkbox" id="logoBgHide" checked onchange="updateQRPreview()"> Xóa nền sau Logo
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel panel-right">
+            <h2>Xem trước QR</h2>
+            
+            <div id="qrPreview"></div>
+            
+            <div class="row" style="width: 100%; border-top: 1px solid var(--border); padding-top: 15px;">
+                <div class="col">
+                    <label>Kích thước (px)</label>
+                    <input type="number" id="exportSize" value="1024" min="100" max="4096">
+                </div>
+                <div class="col">
+                    <label>Định dạng</label>
+                    <select id="exportFormat">
+                        <option value="png">PNG</option>
+                        <option value="svg">SVG</option>
+                        <option value="jpeg">JPG</option>
+                        <option value="webp">WEBP</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button class="btn-download" onclick="downloadQR()">TẢI MÃ QR XUỐNG</button>
+            <small class="hint" style="margin-top: 10px; text-align: center;">Mẹo: Chọn SVG để in ấn khổ lớn không bị vỡ ảnh.</small>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH GITHUB ---
+        const CONFIG = {
+            owner: 'vinhtienlovemath', 
+            repo: 'url',  
+            path: 'links.json'
+        };
+
+        const baseUrl = `https://${CONFIG.owner}.github.io/${CONFIG.repo}`;
+        
+        // Khởi tạo QR Code object
+        const qrCode = new QRCodeStyling({
+            width: 300,
+            height: 300,
+            data: "https://vinhtienlovemath.github.io",
+            margin: 10,
+            qrOptions: { typeNumber: 0, mode: "Byte", errorCorrectionLevel: "H" },
+            imageOptions: { hideBackgroundDots: true, imageSize: 0.4, margin: 5 },
+            dotsOptions: { color: "#000000", type: "square" },
+            backgroundOptions: { color: "#ffffff" },
+            cornersSquareOptions: { type: "square", color: "#000000" },
+            cornersDotOptions: { type: "square", color: "#000000" }
+        });
+
+        qrCode.append(document.getElementById("qrPreview"));
+
+        let currentLogoDataUrl = null;
+
+        // Tự động load Token nếu có
+        const savedToken = localStorage.getItem('gh_token');
+        if (savedToken) document.getElementById('ghToken').value = savedToken;
+
+        // Ẩn hiện UI chọn màu
+        function toggleBgColors() {
+            const type = document.getElementById('bgFillType').value;
+            const isTrans = document.getElementById('bgTransparent').checked;
+            document.getElementById('bgSolidGroup').style.display = (type === 'solid' && !isTrans) ? 'flex' : (isTrans ? 'flex' : 'none');
+            document.getElementById('bgGradientGroup').style.display = (type !== 'solid' && !isTrans) ? 'flex' : 'none';
+        }
+
+        function toggleDotColors() {
+            const type = document.getElementById('dotFillType').value;
+            document.getElementById('dotSolidGroup').style.display = type === 'solid' ? 'flex' : 'none';
+            document.getElementById('dotGradientGroup').style.display = type !== 'solid' ? 'flex' : 'none';
+        }
+
+        // --- LOGIC QR CODE --- 
+        function updateQRPreview() {
+            // 1. Lấy dữ liệu link và hình dáng
+            const longUrl = document.getElementById('longUrl').value;
+            const shortSlug = document.getElementById('shortSlug').value;
+            const qrData = shortSlug ? `${baseUrl}/${shortSlug}` : (longUrl || "https://vinhtienlovemath.github.io");
+
+            const dotType = document.getElementById('dotType').value;
+            const eyeFrame = document.getElementById('eyeFrame').value;
+            const errLevel = document.getElementById('errorCorrection') ? document.getElementById('errorCorrection').value : "H"; 
+
+            // 2. Xử lý nền
+            const isTransparent = document.getElementById('bgTransparent').checked;
+            const bgType = document.getElementById('bgFillType').value;
+            
+            // Khởi tạo mặc định, ép xóa gradient cũ
+            let bgOptions = { color: "transparent", gradient: null }; 
+            
+            if (!isTransparent) {
+                if (bgType === 'solid') {
+                    bgOptions.color = document.getElementById('bgColor').value;
+                } else {
+                    bgOptions.gradient = {
+                        type: bgType,
+                        rotation: parseInt(document.getElementById('bgAngle').value) * (Math.PI / 180),
+                        colorStops: [
+                            { offset: 0, color: document.getElementById('bgColor1').value },
+                            { offset: 1, color: document.getElementById('bgColor2').value }
+                        ]
+                    };
+                }
+            }
+
+            // 3. Xử lý dots
+            const dotTypeFill = document.getElementById('dotFillType').value;
+            
+            // Khởi tạo mặc định, ép xóa gradient cũ
+            let dotsOptions = { type: dotType, gradient: null }; 
+            let primaryColorForEyes = "#000000"; 
+            
+            if (dotTypeFill === 'solid') {
+                primaryColorForEyes = document.getElementById('dotColor').value;
+                dotsOptions.color = primaryColorForEyes;
+            } else {
+                primaryColorForEyes = document.getElementById('dotColor1').value; // Mắt QR ăn theo màu 1
+                dotsOptions.gradient = {
+                    type: dotTypeFill,
+                    rotation: parseInt(document.getElementById('dotAngle').value) * (Math.PI / 180),
+                    colorStops: [
+                        { offset: 0, color: document.getElementById('dotColor1').value },
+                        { offset: 1, color: document.getElementById('dotColor2').value }
+                    ]
+                };
+            }
+
+            // 4. Xử lý logo
+            const logoSize = parseFloat(document.getElementById('logoSize').value);
+            const hideLogoBg = document.getElementById('logoBgHide').checked;
+
+            // 5. Cập nhật QR
+            qrCode.update({
+                data: qrData,
+                qrOptions: { errorCorrectionLevel: errLevel },
+                dotsOptions: dotsOptions,
+                backgroundOptions: bgOptions,
+                cornersSquareOptions: { type: eyeFrame, color: primaryColorForEyes },
+                cornersDotOptions: { type: "square", color: primaryColorForEyes },
+                image: currentLogoDataUrl,
+                imageOptions: { hideBackgroundDots: hideLogoBg, imageSize: logoSize, margin: 5 }
+            });
+        }
+
+        // --- XỬ LÝ LOGO ---
+        function handleLogoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                currentLogoDataUrl = e.target.result;
+                const img = document.getElementById('logoImg');
+                img.src = currentLogoDataUrl;
+                img.style.display = 'block';
+                updateQRPreview();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearLogo() {
+            currentLogoDataUrl = null;
+            document.getElementById('logoUpload').value = "";
+            document.getElementById('logoImg').style.display = 'none';
+            updateQRPreview();
+        }
+
+        // --- TÍNH TOÁN ĐỘ TƯƠNG PHẢN ---
+        function getLuminance(hex) {
+            const rgb = parseInt(hex.slice(1), 16);
+            const r = (rgb >> 16) & 0xff;
+            const g = (rgb >>  8) & 0xff;
+            const b = (rgb >>  0) & 0xff;
+            // Công thức tính độ sáng tiêu chuẩn WCAG
+            const a = [r, g, b].map(function (v) {
+                v /= 255;
+                return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+            });
+            return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+        }
+
+        function checkContrast() {
+            const isTransparent = document.getElementById('bgTransparent').checked;
+            const warningEl = document.getElementById('contrastWarning');
+            
+            if (isTransparent) {
+                // Nếu nền trong suốt, rủi ro phụ thuộc vào chỗ dán QR, báo cảnh báo nhẹ
+                warningEl.style.display = 'block';
+                warningEl.innerHTML = 'Nền trong suốt: Hãy đảm bảo bạn dán mã QR này lên bề mặt có màu sáng nhé!';
+                return;
+            }
+
+            const bgHex = document.getElementById('bgColor').value;
+            const dotHex = document.getElementById('dotColor').value;
+            
+            const lumBg = getLuminance(bgHex);
+            const lumDot = getLuminance(dotHex);
+            
+            // Tính tỷ lệ tương phản
+            const brightest = Math.max(lumBg, lumDot);
+            const darkest = Math.min(lumBg, lumDot);
+            const contrast = (brightest + 0.05) / (darkest + 0.05);
+
+            // Tỷ lệ an toàn cho QR là khoảng > 3.0
+            if (contrast < 3.0) {
+                warningEl.style.display = 'block';
+                warningEl.innerHTML = 'Cảnh báo: Màu nền và màu chấm có độ tương phản quá thấp (' + contrast.toFixed(1) + ':1). Máy quét sẽ rất khó đọc!';
+            } else {
+                warningEl.style.display = 'none';
+            }
+        }
+
+        // --- DOWNLOAD QR ---
+        function downloadQR() {
+            const size = parseInt(document.getElementById('exportSize').value) || 1024;
+            const ext = document.getElementById('exportFormat').value;
+            const slug = document.getElementById('shortSlug').value || 'VTP';
+            
+            // Cập nhật lại size trước khi xuất
+            qrCode.update({ width: size, height: size });
+            
+            qrCode.download({
+                name: `QR_${slug}`,
+                extension: ext
+            }).then(() => {
+                // Trả lại size nhỏ cho preview sau khi tải xong
+                qrCode.update({ width: 300, height: 300 });
+            });
+        }
+
+        // --- LOGIC GITHUB API ---
+        async function createShortLink() {
+            const longUrl = document.getElementById('longUrl').value.trim();
+            const shortSlug = document.getElementById('shortSlug').value.trim();
+            const token = document.getElementById('ghToken').value.trim();
+            const btn = document.getElementById('btnCreateLink');
+            const statusEl = document.getElementById('statusLink');
+
+            if (!longUrl || !shortSlug || !token) {
+                statusEl.className = "alert alert-warning";
+                statusEl.innerHTML = "Vui lòng nhập đủ: Link gốc, Mã rút gọn và Token!";
+                statusEl.style.display = "block";
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "Đang đẩy lên serverless...";
+            statusEl.style.display = "none";
+            localStorage.setItem('gh_token', token);
+
+            try {
+                const apiUrl = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.path}`;
+                const getRes = await fetch(apiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+                
+                if (!getRes.ok) throw new Error('Sai Token hoặc mất kết nối GitHub.');
+                
+                const fileData = await getRes.json();
+                const content = JSON.parse(decodeURIComponent(escape(atob(fileData.content))));
+
+                if (content[shortSlug]) throw new Error(`Mã "${shortSlug}" đã tồn tại!`);
+
+                content[shortSlug] = longUrl;
+                const newContent = btoa(unescape(encodeURIComponent(JSON.stringify(content, null, 2))));
+
+                const putRes = await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: `Add link: ${shortSlug}`, content: newContent, sha: fileData.sha })
+                });
+
+                if (!putRes.ok) throw new Error('Lỗi khi ghi dữ liệu.');
+
+                const fullLink = `${baseUrl}/${shortSlug}`;
+                statusEl.className = "alert alert-success";
+                statusEl.innerHTML = `Thành công! Link <b>${fullLink}</b> đã được tạo. QR Code bên phải đã tự động trỏ về link này.`;
+                statusEl.style.display = "block";
+                
+                updateQRPreview(); // Cập nhật lại QR với slug mới
+
+            } catch (err) {
+                statusEl.className = "alert alert-warning";
+                statusEl.innerHTML = `Lỗi: ${err.message}`;
+                statusEl.style.display = "block";
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Rút gọn URL & Cập nhật QR";
+            }
+        }
+    </script>
+</body>
+</html>
