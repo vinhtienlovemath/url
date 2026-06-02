@@ -1,0 +1,35 @@
+name: Deploy URL Shortener
+
+on:
+  push:
+    branches: ["main"] # Hoặc "master" tùy repo
+    paths:
+      - 'links.json'
+      - 'template.html'
+      - 'build.py'
+      - 'admin.html'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Run Build Script
+        run: python build.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
